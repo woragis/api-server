@@ -36,4 +36,24 @@ const getUsers = async (req, res) => {
   }
 };
 
-module.exports = { getUsers };
+const createUser = async (req, res) => {
+  const { email, password } = req.body;
+  const client = await pool.connect();
+  try {
+    client.query(checkIfEmailExists, [email], (err, result) => {
+      const { email_exists } = result.rows[0];
+      if (email_exists) {
+        res.status(400).json({ message: "email already exists" });
+      }
+      client.query(createUserQuery, [email, password], (err, result) => {
+        res.status(201).json(result.rows);
+      });
+    });
+  } catch (err) {
+    res.status(500).json(err);
+  } finally {
+    client.release();
+  }
+};
+
+module.exports = { getUsers, createUser };
