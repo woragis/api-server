@@ -12,12 +12,14 @@ const pool = new Pool({
 
 const getUsersQuery = `SELECT * FROM ${userTable};`;
 const checkIfUserExists = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE user_id=$1) as user_exists;`;
-const checkIfEmailExists = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE email=$1) as email_exists;`;
-const createUserQuery = `INSERT INTO ${userTable} (email, password) VALUES ($1, $2);`;
+const checkIfEmailIsEqual = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE user_id=$1 AND email=$2) as email_is_equal;`;
+const checkIfPasswordIsEqual = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE user_id=$1 AND password=$2) as password_is_equal;`;
+const checkIfEmailExists = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE user_id!=$1 AND email=$2) as email_already_exists;`;
+const createUserQuery = `INSERT INTO ${userTable} (email, password) VALUES ($1, $2) RETURNING *;`;
 const getUserQuery = `SELECT * FROM ${userTable} WHERE user_id=$1;`;
-const updateUserEmailQuery = `UPDATE ${userTable} SET email=$2 WHERE user_id=$1;`;
-const updateUserPasswordQuery = `UPDATE ${userTable} SET password=$2 WHERE user_id=$1;`;
-const updateUserEmailPasswordQuery = `UPDATE ${userTable} SET email=$2, password=$3 WHERE user_id=$1;`;
+const updateUserEmailQuery = `UPDATE ${userTable} SET email=$2 WHERE user_id=$1 RETURNING *;`;
+const updateUserPasswordQuery = `UPDATE ${userTable} SET password=$2 WHERE user_id=$1 RETURNING *;`;
+const updateUserEmailPasswordQuery = `UPDATE ${userTable} SET email=$2, password=$3 WHERE user_id=$1 RETURNING *;`;
 const deleteUserQuery = `DELETE FROM ${userTable} WHERE user_id=$1;`;
 
 const getUsers = async (req, res) => {
@@ -79,32 +81,59 @@ const updateUser = async (req, res) => {
   const client = await pool.connect();
   try {
     if (email) {
-      client.query(checkIfEmailExists, [email], (err, result) => {
-        const { email_exists } = result.rows[0];
-        if (email_exists) {
-          res.status(400).json({ message: "email already exists" });
+      client.query(checkIfEmailIsEqual, [id, email], (err, result) => {
+        const { email_is_equal } = result.rows[0];
+        if (email_is_equal) {
+          res.status(400).json({ message: "email is the same" });
         } else {
-          if (password) {
-            client.query(
-              updateUserEmailPasswordQuery,
-              [id, email, password],
-              (err, result) => {
-                if (err) {
-                  res.status(500).json(err);
-                }
-                res.json(result.rows);
+          client.query(checkIfEmailExists, [id, email], (err, result) => {
+            const { email_exists } = result.rows[0];
+            if (email_exists) {
+              res.status(400).json({ message: "email already exists" });
+            } else {
+              if (password) {
+                console.log("modifying email and password");
+                client.query(
+                  updateUserEmailPasswordQuery,
+                  [id, email, password],
+                  (err, result) => {
+                    if (err) {
+                      res.status(500).json(err);
+                    } else {
+                      res.json(result.rows);
+                    }
+                  }
+                );
+              } else {
+                console.log("modifying email only, No password");
+                client.query(
+                  updateUserEmailQuery,
+                  [id, email],
+                  (err, result) => {
+                    res.status(202).json(result.rows);
+                  }
+                );
               }
-            );
-          } else {
-            client.query(updateUserEmailQuery, [id, email], (err, result) => {
-              res.status(202).json(result.rows);
-            });
-          }
+            }
+          });
         }
       });
     } else if (password) {
-      client.query(updateUserPasswordQuery, [id, password], (err, result) => {
-        res.status(202).json(result.rows);
+      // check if password is changing
+      client.query(checkIfPasswordIsEqual, [id, password], (err, result) => {
+        const { password_is_equal } = result.rows[0];
+        if (password_is_equal) {
+          res.status(400).json({ message: "Password is equal" });
+        } else {
+          console.log("modifying password only, No email");
+          client.query(
+            updateUserPasswordQuery,
+            [id, password],
+            (err, result) => {
+              res.status(202).json(result.rows);
+            }
+          );
+        }
       });
     } else {
       res.status(400).json({ message: "Provide values" });
