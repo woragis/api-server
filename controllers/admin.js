@@ -116,4 +116,24 @@ const updateUser = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, getUser, createUser, updateUser };
+const deleteUser = async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    client.query(checkIfUserExists, [id], (err, result) => {
+      const { user_exists } = result.rows[0];
+      if (!user_exists) {
+        res.status(400).json({ message: "User doesn't exists" });
+      }
+      client.query(deleteUserQuery, [id], (err, result) => {
+        res.status(200).json({ message: "User deleted" });
+      });
+    });
+  } catch (err) {
+    res.status(500).json(err);
+  } finally {
+    client.release();
+  }
+};
+
+module.exports = { getUsers, getUser, createUser, updateUser, deleteUser };
