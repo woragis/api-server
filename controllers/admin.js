@@ -73,4 +73,47 @@ const getUser = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, getUser, createUser };
+const updateUser = async (req, res) => {
+  const { id } = req.params;
+  const { email, password } = req.body;
+  const client = await pool.connect();
+  try {
+    if (email) {
+      client.query(checkIfEmailExists, [email], (err, result) => {
+        const { email_exists } = result.rows[0];
+        if (email_exists) {
+          res.status(400).json({ message: "email already exists" });
+        } else {
+          if (password) {
+            client.query(
+              updateUserEmailPasswordQuery,
+              [id, email, password],
+              (err, result) => {
+                if (err) {
+                  res.status(500).json(err);
+                }
+                res.json(result.rows);
+              }
+            );
+          } else {
+            client.query(updateUserEmailQuery, [id, email], (err, result) => {
+              res.status(202).json(result.rows);
+            });
+          }
+        }
+      });
+    } else if (password) {
+      client.query(updateUserPasswordQuery, [id, password], (err, result) => {
+        res.status(202).json(result.rows);
+      });
+    } else {
+      res.status(400).json({ message: "Provide values" });
+    }
+  } catch (err) {
+    res.status(500).json(err);
+  } finally {
+    client.release();
+  }
+};
+
+module.exports = { getUsers, getUser, createUser, updateUser };
