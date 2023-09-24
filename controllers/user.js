@@ -9,3 +9,24 @@ const pool = new Pool({
   user: process.env.POSTGRES_DATABASE_USER,
   password: process.env.POSTGRES_DATABASE_USER_PASSWORD,
 });
+
+const createAccount = async (req, res) => {
+  const { email, password } = req.body;
+  const client = await pool.connect();
+  const createAccountQuery = `INSERT INTO ${userTable} (email, password) VALUES ($1, $2);`;
+  try {
+    client.query(createAccountQuery, [email, password], (err, result) => {
+      if (err) {
+        res.status(500).json({ error: "Error creating user" });
+      } else {
+        res.status(201).json({ message: "Created user" });
+      }
+    });
+  } catch (error) {
+    console.error(error);
+  } finally {
+    client.release();
+  }
+};
+
+module.exports = { createAccount };
