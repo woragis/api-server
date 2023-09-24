@@ -56,4 +56,21 @@ const createUser = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, createUser };
+const getUser = async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    client.query(getUserQuery, [id], (err, result) => {
+      if (err) {
+        res.status(500).json(err);
+      }
+      res.json(result.rows);
+    });
+  } catch (err) {
+    res.status(500).json(err);
+  } finally {
+    client.release();
+  }
+};
+
+module.exports = { getUsers, getUser, createUser };
