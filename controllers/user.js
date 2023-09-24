@@ -29,4 +29,27 @@ const createAccount = async (req, res) => {
   }
 };
 
-module.exports = { createAccount };
+const loginUser = async (req, res) => {
+  const { email, password } = req.body;
+  const client = await pool.connect();
+  const loginUserEmailQuery = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE email=$1) as email_exists;`;
+  const loginUserPasswordQuery = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE email=$1 AND password=$2) as correct_password;`;
+  try {
+    if (client.query(loginUserEmailQuery, email)) {
+      client.query(loginUserPasswordQuery, [email, password], (err, result) => {
+        if (err) {
+          console.error(err);
+          res.status(401).json({ error: "Wrong Password" });
+        }
+      });
+    } else {
+      res.status(401).json({ error: "Email not found" });
+    }
+  } catch (error) {
+    console.error(error);
+  } finally {
+    client.release();
+  }
+};
+
+module.exports = { createAccount, loginUser };
