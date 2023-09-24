@@ -19,3 +19,21 @@ const updateUserEmailQuery = `UPDATE ${userTable} SET email=$2 WHERE user_id=$1;
 const updateUserPasswordQuery = `UPDATE ${userTable} SET password=$2 WHERE user_id=$1;`;
 const updateUserEmailPasswordQuery = `UPDATE ${userTable} SET email=$2, password=$3 WHERE user_id=$1;`;
 const deleteUserQuery = `DELETE FROM ${userTable} WHERE user_id=$1;`;
+
+const getUsers = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    client.query(getUsersQuery, (err, result) => {
+      if (err) {
+        res.status(500).json({ message: "Internal server error" });
+      }
+      res.status(200).json(result.rows);
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Internal server error" });
+  } finally {
+    client.release();
+  }
+};
+
+module.exports = { getUsers };
