@@ -47,6 +47,8 @@ app.get("/", (req, res) => {
 //   next();
 // };
 // app.use(newCookie);
+const logger = require("./middlewares/logger");
+app.use(logger);
 const user = require("./routes/user");
 app.use("/user", user);
 const admin = require("./routes/admin");
