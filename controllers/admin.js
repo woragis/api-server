@@ -1,4 +1,5 @@
 require("dotenv").config();
+const bcrypt = require("bcrypt");
 const { Pool } = require("pg");
 
 const userTable = process.env.POSTGRES_DATABASE_TABLE_ACCOUNT;
@@ -10,17 +11,23 @@ const pool = new Pool({
   password: process.env.POSTGRES_DATABASE_USER_PASSWORD,
 });
 
+// get all users
 const getUsersQuery = `SELECT * FROM ${userTable};`;
-const checkIfUserExists = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE user_id=$1) as user_exists;`;
-const checkIfEmailIsEqual = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE user_id=$1 AND email=$2) as email_is_equal;`;
-const checkIfPasswordIsEqual = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE user_id=$1 AND password=$2) as password_is_equal;`;
-const checkIfEmailExists = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE user_id!=$1 AND email=$2) as email_already_exists;`;
-const createUserQuery = `INSERT INTO ${userTable} (email, password) VALUES ($1, $2) RETURNING *;`;
-const getUserQuery = `SELECT * FROM ${userTable} WHERE user_id=$1;`;
-const updateUserEmailQuery = `UPDATE ${userTable} SET email=$2 WHERE user_id=$1 RETURNING *;`;
-const updateUserPasswordQuery = `UPDATE ${userTable} SET password=$2 WHERE user_id=$1 RETURNING *;`;
-const updateUserEmailPasswordQuery = `UPDATE ${userTable} SET email=$2, password=$3 WHERE user_id=$1 RETURNING *;`;
-const deleteUserQuery = `DELETE FROM ${userTable} WHERE user_id=$1;`;
+// get single user
+const getUserQuery = `SELECT * FROM ${userTable} WHERE account_id=$1;`;
+// for register
+const checkIfEmailExists = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE email=$1) as email_exists;`;
+const registerUserInDB = `INSERT INTO ${userTable} (email, password) VALUES ($1, $2) RETURNING *;`;
+// for update
+const checkIfEmailChanged = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE account_id=$1 AND email!=$2) as email_changed;`;
+const checkIfEmailAlreadyExists = `SELECT EXISTS (SELECT 1 FROM ${userTable} WHERE account_id!=$1 AND email=$2) as email_already_exists;`;
+const updateUserEmailQuery = `UPDATE ${userTable} SET email=$2 WHERE account_id=$1 RETURNING *;`;
+const updateUserEmailPasswordQuery = `UPDATE ${userTable} SET email=$2, password=$3 WHERE account_id=$1 RETURNING *;`;
+const updateUserPasswordQuery = `UPDATE ${userTable} SET password=$2 WHERE account_id=$1 RETURNING *;`;
+// for delete
+const deleteUserQuery = `DELETE FROM ${userTable} WHERE account_id=$1;`;
+
+const salt = bcrypt.genSaltSync(10);
 
 const getUsers = async (req, res) => {
   const client = await pool.connect();
@@ -38,21 +45,39 @@ const getUsers = async (req, res) => {
   }
 };
 
-const createUser = async (req, res) => {
+const registerUser = async (req, res) => {
   const { email, password } = req.body;
+
   const client = await pool.connect();
+
   try {
     client.query(checkIfEmailExists, [email], (err, result) => {
+      if (err) res.locals.serverError;
+
       const { email_exists } = result.rows[0];
       if (email_exists) {
-        res.status(400).json({ message: "email already exists" });
+        res.status(400).json({ message: "email already exists, try again" });
+      } else {
+        const hashedPassword = bcrypt.hashSync(password, salt);
+        client.query(
+          registerUserInDB,
+          [email, hashedPassword],
+          (err, result) => {
+            if (err) res.locals.serverError;
+            res.status(201).json([
+              { message: "user created" },
+              {
+                email: email,
+                password: password,
+                hashedPassword: hashedPassword,
+              },
+            ]);
+          }
+        );
       }
-      client.query(createUserQuery, [email, password], (err, result) => {
-        res.status(201).json(result.rows);
-      });
     });
   } catch (err) {
-    res.status(500).json(err);
+    res.locals.serverError;
   } finally {
     client.release();
   }
@@ -63,13 +88,11 @@ const getUser = async (req, res) => {
   const client = await pool.connect();
   try {
     client.query(getUserQuery, [id], (err, result) => {
-      if (err) {
-        res.status(500).json(err);
-      }
+      if (err) res.locals.serverError;
       res.json(result.rows);
     });
   } catch (err) {
-    res.status(500).json(err);
+    res.locals.serverError;
   } finally {
     client.release();
   }
@@ -81,60 +104,65 @@ const updateUser = async (req, res) => {
   const client = await pool.connect();
   try {
     if (email) {
-      client.query(checkIfEmailIsEqual, [id, email], (err, result) => {
-        const { email_is_equal } = result.rows[0];
-        if (email_is_equal) {
+      client.query(checkIfEmailChanged, [id, email], (err, result) => {
+        if (err) res.locals.serverError;
+
+        const { email_changed } = result.rows[0];
+        if (!email_changed) {
           res.status(400).json({ message: "email is the same" });
         } else {
-          client.query(checkIfEmailExists, [id, email], (err, result) => {
-            const { email_exists } = result.rows[0];
-            if (email_exists) {
-              res.status(400).json({ message: "email already exists" });
-            } else {
-              if (password) {
-                console.log("modifying email and password");
-                client.query(
-                  updateUserEmailPasswordQuery,
-                  [id, email, password],
-                  (err, result) => {
-                    if (err) {
-                      res.status(500).json(err);
-                    } else {
-                      res.json(result.rows);
-                    }
-                  }
-                );
-              } else {
-                console.log("modifying email only, No password");
-                client.query(
-                  updateUserEmailQuery,
-                  [id, email],
-                  (err, result) => {
-                    res.status(202).json(result.rows);
-                  }
-                );
-              }
-            }
-          });
-        }
-      });
-    } else if (password) {
-      // check if password is changing
-      client.query(checkIfPasswordIsEqual, [id, password], (err, result) => {
-        const { password_is_equal } = result.rows[0];
-        if (password_is_equal) {
-          res.status(400).json({ message: "Password is equal" });
-        } else {
-          console.log("modifying password only, No email");
           client.query(
-            updateUserPasswordQuery,
-            [id, password],
+            checkIfEmailAlreadyExists,
+            [id, email],
             (err, result) => {
-              res.status(202).json(result.rows);
+              const { email_already_exists } = result.rows[0];
+              if (email_already_exists) {
+                res.status(400).json({ message: "email already exists" });
+              } else {
+                if (password) {
+                  console.log("modifying email and password");
+                  const hashedPassword = bcrypt.hashSync(password, salt);
+                  client.query(
+                    updateUserEmailPasswordQuery,
+                    [id, email, hashedPassword],
+                    (err, result) => {
+                      if (err) res.locals.serverError;
+                      else {
+                        res
+                          .status(202)
+                          .json([
+                            { message: `Updated user ${id}` },
+                            result.rows,
+                          ]);
+                      }
+                    }
+                  );
+                } else {
+                  client.query(
+                    updateUserEmailQuery,
+                    [id, email],
+                    (err, result) => {
+                      if (err) res.locals.serverError;
+                      res
+                        .status(202)
+                        .json([{ message: `Updated user ${id}` }, result.rows]);
+                    }
+                  );
+                }
+              }
             }
           );
         }
       });
+    } else if (password) {
+      const hashedPassword = bcrypt.hashSync(password, salt);
+      client.query(
+        updateUserPasswordQuery,
+        [id, hashedPassword],
+        (err, result) => {
+          res.status(202).json(result.rows);
+        }
+      );
     } else {
       res.status(400).json({ message: "Provide values" });
     }
@@ -149,14 +177,8 @@ const deleteUser = async (req, res) => {
   const { id } = req.params;
   const client = await pool.connect();
   try {
-    client.query(checkIfUserExists, [id], (err, result) => {
-      const { user_exists } = result.rows[0];
-      if (!user_exists) {
-        res.status(400).json({ message: "User doesn't exists" });
-      }
-      client.query(deleteUserQuery, [id], (err, result) => {
-        res.status(200).json({ message: "User deleted" });
-      });
+    client.query(deleteUserQuery, [id], (err, result) => {
+      res.status(200).json({ message: "User deleted" });
     });
   } catch (err) {
     res.status(500).json(err);
@@ -165,4 +187,4 @@ const deleteUser = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, getUser, createUser, updateUser, deleteUser };
+module.exports = { getUsers, getUser, registerUser, updateUser, deleteUser };

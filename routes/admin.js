@@ -4,13 +4,13 @@ const router = express.Router();
 const {
   getUsers,
   getUser,
-  createUser,
+  registerUser,
   updateUser,
   deleteUser,
 } = require("../controllers/admin");
 
 router.route("/users").get(getUsers);
-router.route("/users/create").post(createUser);
+router.route("/users/create").post(registerUser);
 router
   .route("/users/:id")
   .get(getUser)
