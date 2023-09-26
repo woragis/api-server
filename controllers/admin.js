@@ -2,22 +2,6 @@ require("dotenv").config();
 const bcrypt = require("bcrypt");
 const { Client, Pool } = require("pg");
 
-const client = new Client({
-  host: process.env.POSTGRES_DATABASE_HOST,
-  port: process.env.POSTGRES_DATABASE_PORT,
-  database: process.env.POSTGRES_DATABASE,
-  user: process.env.POSTGRES_DATABASE_USER,
-  password: process.env.POSTGRES_DATABASE_USER_PASSWORD,
-});
-
-const pool = new Pool({
-  host: process.env.POSTGRES_DATABASE_HOST,
-  port: process.env.POSTGRES_DATABASE_PORT,
-  database: process.env.POSTGRES_DATABASE,
-  user: process.env.POSTGRES_DATABASE_USER,
-  password: process.env.POSTGRES_DATABASE_USER_PASSWORD,
-});
-
 const userTable = process.env.POSTGRES_DATABASE_TABLE_ACCOUNT;
 // get all users
 const getUsersQuery = `SELECT * FROM ${userTable};`;
@@ -38,9 +22,17 @@ const deleteUserQuery = `DELETE FROM ${userTable} WHERE account_id=$1;`;
 const salt = bcrypt.genSaltSync(10);
 
 const getUsers = async (req, res) => {
+  const pool = new Pool({
+    host: process.env.POSTGRES_DATABASE_HOST,
+    port: process.env.POSTGRES_DATABASE_PORT,
+    database: process.env.POSTGRES_DATABASE,
+    user: process.env.POSTGRES_DATABASE_USER,
+    password: process.env.POSTGRES_DATABASE_USER_PASSWORD,
+  });
+
   const client = await pool.connect();
   try {
-    const result = client.query(getUserQuery);
+    const result = await client.query(getUsersQuery);
     res.status(200).json(result.rows);
   } catch (err) {
     res.status(500).json({ message: "Internal server error" });
@@ -51,6 +43,15 @@ const getUsers = async (req, res) => {
 
 const registerUser = async (req, res) => {
   const { email, password } = req.body;
+
+  const client = new Client({
+    host: process.env.POSTGRES_DATABASE_HOST,
+    port: process.env.POSTGRES_DATABASE_PORT,
+    database: process.env.POSTGRES_DATABASE,
+    user: process.env.POSTGRES_DATABASE_USER,
+    password: process.env.POSTGRES_DATABASE_USER_PASSWORD,
+  });
+
   try {
     await client.connect();
     const checkEmail = await client.query(checkIfEmailExists, [email]);
@@ -71,12 +72,21 @@ const registerUser = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: "Internal server error" });
   } finally {
-    client.release();
+    await client.end();
   }
 };
 
 const getUser = async (req, res) => {
   const { id } = req.params;
+
+  const pool = new Pool({
+    host: process.env.POSTGRES_DATABASE_HOST,
+    port: process.env.POSTGRES_DATABASE_PORT,
+    database: process.env.POSTGRES_DATABASE,
+    user: process.env.POSTGRES_DATABASE_USER,
+    password: process.env.POSTGRES_DATABASE_USER_PASSWORD,
+  });
+
   const client = await pool.connect();
   try {
     const { rows } = await client.query(getUserQuery, [id]);
@@ -86,12 +96,19 @@ const getUser = async (req, res) => {
   } finally {
     client.release();
   }
-  pool.end();
 };
 
 const updateUser = async (req, res) => {
   const { id } = req.params;
   const { email, password } = req.body;
+
+  const client = new Client({
+    host: process.env.POSTGRES_DATABASE_HOST,
+    port: process.env.POSTGRES_DATABASE_PORT,
+    database: process.env.POSTGRES_DATABASE,
+    user: process.env.POSTGRES_DATABASE_USER,
+    password: process.env.POSTGRES_DATABASE_USER_PASSWORD,
+  });
 
   try {
     await client.connect();
@@ -111,15 +128,13 @@ const updateUser = async (req, res) => {
         if (!email_already_exists) {
           if (password) {
             const hashedPassword = bcrypt.hashSync(password, salt);
-            client.query(
+            const resultUpdate = await client.query(
               updateUserEmailPasswordQuery,
-              [id, email, hashedPassword],
-              (err, result) => {
-                res
-                  .status(202)
-                  .json([{ message: `Updated user ${id}` }, result.rows]);
-              }
+              [id, email, hashedPassword]
             );
+            res
+              .status(202)
+              .json([{ message: `Updated user ${id}` }, resultUpdate.rows]);
           } else {
             client.query(updateUserEmailQuery, [id, email], (err, result) => {
               res
@@ -156,6 +171,15 @@ const updateUser = async (req, res) => {
 
 const deleteUser = async (req, res) => {
   const { id } = req.params;
+
+  const client = new Client({
+    host: process.env.POSTGRES_DATABASE_HOST,
+    port: process.env.POSTGRES_DATABASE_PORT,
+    database: process.env.POSTGRES_DATABASE,
+    user: process.env.POSTGRES_DATABASE_USER,
+    password: process.env.POSTGRES_DATABASE_USER_PASSWORD,
+  });
+
   try {
     await client.connect();
     await client.query(deleteUserQuery, [id]);
