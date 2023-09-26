@@ -49,9 +49,9 @@ app.get("/", (req, res) => {
 // app.use(newCookie);
 const logger = require("./middlewares/logger");
 app.use(logger);
-const user = require("./routes/user");
+const user = require("./routes/user.route");
 app.use("/user", user);
-const admin = require("./routes/admin");
+const admin = require("./routes/admin.route");
 app.use("/admin", admin);
 
 app.listen(server_port, () => {
