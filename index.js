@@ -5,16 +5,30 @@ const express = require("express");
 const session = require("express-session");
 const app = express();
 const server_port = process.env.EXPRESS_SERVER_PORT;
+const pgSession = require("connect-pg-simple")(session);
+const { Pool } = require("pg");
+
+const pool = new Pool({
+  host: process.env.POSTGRES_DATABASE_HOST,
+  port: process.env.POSTGRES_DATABASE_PORT,
+  database: process.env.POSTGRES_DATABASE,
+  user: process.env.POSTGRES_DATABASE_USER,
+  password: process.env.POSTGRES_DATABASE_USER_PASSWORD,
+});
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(
   session({
+    store: new pgSession({
+      pool: pool,
+      tableName: "sessions",
+    }),
     secret: "woragis2004password2000",
-    resave: true,
-    saveUninitialized: true,
-    cookie: { sameSite: "none", secure: false },
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false, maxAge: 3600000 },
   })
 );
 
